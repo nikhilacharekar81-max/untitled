@@ -42,7 +42,7 @@ import { AdminPage } from './pages/AdminPage';
 import { SettingsPage } from './components/SettingsPage';
 import { UserWalletsLedgerModule } from './components/UserWalletsLedgerModule';
 import { PaymentsModule } from './components/PaymentsModule';
-import { LoginModal, SignupModal, UserSwitchModal, ForgotPasswordModal } from './components/modals';
+import { LoginModal, SignupModal, UserSwitchModal, ForgotPasswordModal, WishlistModal, SupportModal } from './components/modals';
 import { slugify, getGigUrl } from './utils/slugify';
 import { PPH_CATEGORIES } from './components/HeaderCategoriesNav';
 import { ProjectDetailView } from './components/marketplace/ProjectDetailView';
@@ -110,7 +110,7 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
 
-  // Forgot Password modal state
+  // Forgot Password & Support modal state
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
   const [forgotStep, setForgotStep] = useState<'request' | 'verify' | 'reset'>('request');
   const [forgotQuery, setForgotQuery] = useState('');
@@ -118,6 +118,12 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
   const [mockForgotCodeDisplay, setMockForgotCodeDisplay] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
+
+  // Wishlist and Support modal state
+  const [isWishlistOpen, setIsWishlistOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
+  const [supportSubject, setSupportSubject] = useState('');
+  const [supportMessage, setSupportMessage] = useState('');
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -127,7 +133,7 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
   const handleForgotRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/auth/forgot-password', {
+      const res = await fetch('/api/auth/forgot-password/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: forgotQuery })
@@ -148,7 +154,7 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
   const handleForgotVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/auth/verify-recovery-code', {
+      const res = await fetch('/api/auth/forgot-password/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: forgotQuery, code: forgotCode })
@@ -172,7 +178,7 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
       return;
     }
     try {
-      const res = await fetch('/api/auth/reset-password', {
+      const res = await fetch('/api/auth/forgot-password/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: forgotQuery, code: forgotCode, newPassword })
@@ -191,6 +197,35 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
       }
     } catch {
       showToast('Failed to reset password');
+    }
+  };
+
+  const handleSubmitSupportTicket = async (e: React.FormEvent, isAppeal?: boolean) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/support-tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getAuthToken() || ''}`
+        },
+        body: JSON.stringify({
+          subject: supportSubject,
+          text: supportMessage,
+          isAppeal
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setIsSupportOpen(false);
+        setSupportSubject('');
+        setSupportMessage('');
+        showToast('Support ticket submitted successfully!');
+      } else {
+        showToast(data.error || 'Failed to submit support ticket.');
+      }
+    } catch {
+      showToast('Failed to submit support ticket.');
     }
   };
 
@@ -257,6 +292,34 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
 
   const navigate = useCallback((to: string, e?: React.MouseEvent) => {
     if (e) e.preventDefault();
+    if (to === '/login') {
+      setIsLoginOpen(true);
+      return;
+    }
+    if (to === '/signup') {
+      setIsSignupOpen(true);
+      return;
+    }
+    if (to === '/switch-user') {
+      setIsSwitchUserOpen(true);
+      return;
+    }
+    if (to === '/support') {
+      setIsSupportOpen(true);
+      return;
+    }
+    if (to === '/wishlist') {
+      setIsWishlistOpen(true);
+      return;
+    }
+    if (to === '/post-project' || to === '/create-project') {
+      if (typeof window !== 'undefined') {
+        window.history.pushState({}, '', '/buyer-activity');
+      }
+      setPath('/buyer-activity');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (typeof window !== 'undefined') {
       window.history.pushState({}, '', to);
     }
@@ -854,8 +917,42 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
           setLoginCode={setLoginCode}
           handleLoginSubmit={async (e: React.FormEvent) => {
             e.preventDefault();
-            await loadUserSession();
-            setIsLoginOpen(false);
+            try {
+              const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  query: loginEmail,
+                  password: loginPassword,
+                  code: loginCode,
+                  deviceId: getDeviceId()
+                })
+              });
+              const data = await res.json();
+              if (data.requiresCode) {
+                setLoginRequiresCode(true);
+                setLoginVerificationMessage(data.message || 'Verification code sent to your email.');
+                if (data.mockCode) setMockEmailCodeDisplay(data.mockCode);
+                showToast(data.message || 'Verification code required.');
+                return;
+              }
+              if (res.ok && data.token && data.user) {
+                setAuthToken(data.token);
+                setCurrentUser(data.user);
+                setImpersonatedUser(null);
+                await refresh(data.user.id);
+                setIsLoginOpen(false);
+                setLoginEmail('');
+                setLoginPassword('');
+                setLoginCode('');
+                setLoginRequiresCode(false);
+                showToast(`Welcome back, ${data.user.name}!`);
+              } else {
+                showToast(data.error || 'Login failed. Please check your credentials.');
+              }
+            } catch {
+              showToast('An error occurred during login.');
+            }
           }}
           setLoginRequiresCode={setLoginRequiresCode}
           usersList={users}
@@ -874,8 +971,42 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
           onClose={() => setIsSignupOpen(false)}
           handleSignupSubmit={async (e: React.FormEvent) => {
             e.preventDefault();
-            await loadUserSession();
-            setIsSignupOpen(false);
+            if (signupPassword !== signupConfirmPassword) {
+              showToast('Passwords do not match');
+              return;
+            }
+            try {
+              const res = await fetch('/api/auth/signup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: signupName,
+                  email: signupEmail,
+                  mobile: signupMobile,
+                  password: signupPassword,
+                  confirmPassword: signupConfirmPassword,
+                  deviceId: getDeviceId()
+                })
+              });
+              const data = await res.json();
+              if (res.ok && data.token && data.user) {
+                setAuthToken(data.token);
+                setCurrentUser(data.user);
+                setImpersonatedUser(null);
+                await refresh(data.user.id);
+                setIsSignupOpen(false);
+                setSignupName('');
+                setSignupEmail('');
+                setSignupMobile('');
+                setSignupPassword('');
+                setSignupConfirmPassword('');
+                showToast(`Account created successfully! Welcome, ${data.user.name}.`);
+              } else {
+                showToast(data.error || 'Signup failed.');
+              }
+            } catch {
+              showToast('An error occurred during signup.');
+            }
           }}
           signupName={signupName}
           setSignupName={setSignupName}
@@ -922,6 +1053,33 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
           setCurrentUser={setCurrentUser}
           setImpersonatedUser={setImpersonatedUser}
           refresh={refresh}
+        />
+      )}
+
+      {isWishlistOpen && (
+        <WishlistModal
+          isOpen={isWishlistOpen}
+          onClose={() => setIsWishlistOpen(false)}
+          likedGigIds={likedGigIds}
+          gigs={gigs}
+          onToggleLike={(gigId: string) => setLikedGigIds(prev => prev.includes(gigId) ? prev.filter(id => id !== gigId) : [...prev, gigId])}
+          getGigUrl={getGigUrl}
+          navigate={(to: string, e: React.MouseEvent) => {
+            setIsWishlistOpen(false);
+            navigate(to, e);
+          }}
+        />
+      )}
+
+      {isSupportOpen && (
+        <SupportModal
+          isOpen={isSupportOpen}
+          onClose={() => setIsSupportOpen(false)}
+          supportSubject={supportSubject}
+          setSupportSubject={setSupportSubject}
+          supportMessage={supportMessage}
+          setSupportMessage={setSupportMessage}
+          onSubmitTicket={handleSubmitSupportTicket}
         />
       )}
     </div>

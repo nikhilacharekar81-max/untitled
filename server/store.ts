@@ -450,6 +450,22 @@ export async function hydrateStoreFromPostgres() {
     await postgresStore.runMigrations();
     postgresStore.isHydrated = true;
 
+    try {
+      const persistedSettings = await postgresStore.loadSiteSettings();
+      if (persistedSettings) siteSettings.loadFromState(persistedSettings);
+
+      const persistedGateways = await postgresStore.loadPaymentGateways();
+      if (persistedGateways) paymentGatewayManager.loadFromState(persistedGateways);
+
+      const persistedCategories = await postgresStore.loadCategories();
+      if (persistedCategories && Array.isArray(persistedCategories)) {
+        const { setCategories } = await import('./routes/adminRoutes.js');
+        setCategories(persistedCategories);
+      }
+    } catch (settErr) {
+      console.warn('[Store] Notice: Failed to hydrate site settings/gateways/categories:', settErr);
+    }
+
     const isProduction = process.env.NODE_ENV === 'production' && process.env.SEED_DEMO_DATA !== 'true';
     const pool = postgresStore.getPool();
     const userCountRes = await pool.query('SELECT COUNT(*) as c FROM users');

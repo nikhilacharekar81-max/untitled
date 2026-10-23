@@ -42,7 +42,7 @@ export function Footer({ navigate }: FooterProps) {
               </a>
             </li>
             <li>
-              <a href="/categories/design" onClick={(e) => navigate('/categories/design', e)} className="hover:text-fiverr-dark transition-colors">
+              <a href="/categories/design-creative" onClick={(e) => navigate('/categories/design-creative', e)} className="hover:text-fiverr-dark transition-colors">
                 Design & Creative
               </a>
             </li>

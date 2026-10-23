@@ -1648,6 +1648,24 @@ export class PostgresStore {
     return res.rows.length > 0 ? res.rows[0].value : null;
   }
 
+  // --- CATEGORIES ---
+  async saveCategories(categories: any[]): Promise<void> {
+    return this.withLock('categories', async () => {
+      await this.getPool().query(
+        `INSERT INTO site_settings (key, value, updated_at)
+         VALUES ('categories', $1, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [JSON.stringify(categories)]
+      );
+    });
+  }
+
+  async loadCategories(): Promise<any[] | null> {
+    if (!isPostgresEnabled()) return null;
+    const res = await this.getPool().query("SELECT value FROM site_settings WHERE key = 'categories'");
+    return res.rows.length > 0 ? res.rows[0].value : null;
+  }
+
   // --- NOTIFICATIONS ---
   async saveNotification(n: Notification): Promise<{ inserted: boolean; duplicate?: boolean }> {
     if (!isPostgresEnabled()) {

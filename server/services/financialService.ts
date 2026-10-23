@@ -1058,6 +1058,13 @@ export class FinancialTransactionService {
       await client.query('UPDATE users SET wallet_balance = (SELECT available_balance FROM wallets WHERE user_id = $1) WHERE id = $1', [params.freelancerId]);
 
       await client.query(
+        `INSERT INTO payouts (id, freelancer_id, amount, method, status, details, created_at)
+         VALUES ($1, $2, $3, $4, 'pending', $5, NOW())
+         ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status`,
+        [params.payoutId, params.freelancerId, params.amount, params.method, JSON.stringify({ accountDetails: params.accountDetails })]
+      );
+
+      await client.query(
         'INSERT INTO wallet_movements (id, user_id, amount, type, description) VALUES ($1, $2, $3, $4, $5)',
         [randomUUID(), params.freelancerId, -params.amount, 'payout_request', `Withdrawal requested via ${params.method}`]
       );
@@ -1085,6 +1092,79 @@ export class FinancialTransactionService {
       }
       return result;
     };
+    if (externalClient) return run(externalClient);
+    return postgresStore.executeInTransaction(run);
+  }
+
+  async chargeFeaturedGigFee(params: {
+    gigId: string;
+    sellerId: string;
+    feeAmount: number;
+    featuredUntil: string;
+    actor: string;
+    idempotencyKey?: string;
+  }, externalClient?: any) {
+    const run = async (client: any) => {
+      const idempKey = params.idempotencyKey || `IDEMP-FEATGIG-${params.gigId}-${params.sellerId}`;
+      const existing = await client.query('SELECT result FROM financial_idempotency WHERE key = $1', [idempKey]);
+      if (existing.rows.length > 0) return existing.rows[0].result;
+
+      const gigRes = await client.query('SELECT * FROM gigs WHERE id = $1 FOR UPDATE', [params.gigId]);
+      if (gigRes.rows.length === 0) throw new Error('Gig not found');
+      const gig = gigRes.rows[0];
+
+      if (gig.freelancer_id !== params.sellerId) {
+        throw new Error('Forbidden: You can only feature your own gigs.');
+      }
+
+      if (gig.featured && gig.featured_until && new Date(gig.featured_until) > new Date()) {
+        throw new Error('Gig is already actively featured.');
+      }
+
+      await this.ensureWallet({ userId: params.sellerId, role: 'freelancer' }, client);
+      const walletRes = await client.query('SELECT available_balance FROM wallets WHERE user_id = $1 FOR UPDATE', [params.sellerId]);
+      if (walletRes.rows.length === 0 || Number(walletRes.rows[0].available_balance) < params.feeAmount) {
+        throw new Error('Insufficient funds in wallet.');
+      }
+
+      await client.query('UPDATE wallets SET available_balance = available_balance - $1 WHERE user_id = $2', [params.feeAmount, params.sellerId]);
+      await client.query('UPDATE users SET wallet_balance = (SELECT available_balance FROM wallets WHERE user_id = $1) WHERE id = $1', [params.sellerId]);
+
+      await client.query(
+        'INSERT INTO wallet_movements (id, user_id, amount, type, description) VALUES ($1, $2, $3, $4, $5)',
+        [randomUUID(), params.sellerId, -params.feeAmount, 'fee', `Featured Gig Fee for #${params.gigId}`]
+      );
+
+      await client.query('UPDATE gigs SET featured = TRUE, featured_until = $1 WHERE id = $2', [params.featuredUntil, params.gigId]);
+
+      const journalId = 'jnl_' + randomUUID().slice(0, 12);
+      await client.query(
+        `INSERT INTO ledger_journals (id, reference, description, event_type, idempotency_key, actor)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [journalId, `FEAT-${params.gigId}`, `Featured gig fee for #${params.gigId}`, 'FEATURED_GIG_FEE_PAID', idempKey, params.actor]
+      );
+
+      const entries = [
+        { account_code: '1010', debit: params.feeAmount, credit: 0, description: 'Debit user wallet for featured gig', user_id: params.sellerId },
+        { account_code: '4010', debit: 0, credit: params.feeAmount, description: 'Platform fee revenue for featured gig', user_id: null }
+      ];
+      await this.assertJournalBalanced(client, entries);
+      for (const e of entries) {
+        await client.query(
+          'INSERT INTO ledger_entries (id, journal_id, account_code, debit, credit, description, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [randomUUID(), journalId, e.account_code, e.debit, e.credit, e.description, e.user_id || null]
+        );
+      }
+
+      const result = { success: true, featured: true, featuredUntil: params.featuredUntil };
+      await client.query(
+        'INSERT INTO financial_idempotency (key, operation, status, result) VALUES ($1, $2, $3, $4)',
+        [idempKey, 'chargeFeaturedGigFee', 'completed', JSON.stringify(result)]
+      );
+
+      return result;
+    };
+
     if (externalClient) return run(externalClient);
     return postgresStore.executeInTransaction(run);
   }
@@ -1324,6 +1404,10 @@ export class FinancialTransactionService {
   }) {
     if (!isPostgresEnabled()) return financeLedger.executeAdministrativeAdjustment(params as any);
     return postgresStore.executeInTransaction(async (client) => {
+      const idempKey = params.requestKey || `IDEMP-ADJ-${params.userId}-${params.amount}-${params.direction}-${params.category}`;
+      const existing = await client.query('SELECT result FROM financial_idempotency WHERE key = $1', [idempKey]);
+      if (existing.rows.length > 0) return existing.rows[0].result;
+
       await this.ensureWallet({ userId: params.userId }, client);
 
       const walletRes = await client.query('SELECT * FROM wallets WHERE user_id = $1 FOR UPDATE', [params.userId]);
@@ -1357,9 +1441,9 @@ export class FinancialTransactionService {
       const journalId = 'jnl_' + randomUUID().slice(0, 12);
       const eventType = params.direction === 'credit_user' ? 'ADMIN_ADJUSTMENT_CREDIT' : 'ADMIN_ADJUSTMENT_DEBIT';
       await client.query(
-        `INSERT INTO ledger_journals (id, reference, description, event_type, actor)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [journalId, `ADJ-${params.userId}-${Date.now()}`, `Admin adjustment: ${params.reason}`, eventType, params.actor]
+        `INSERT INTO ledger_journals (id, reference, description, event_type, idempotency_key, actor)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [journalId, `ADJ-${params.userId}-${Date.now()}`, `Admin adjustment: ${params.reason}`, eventType, idempKey, params.actor]
       );
 
       const entries = params.direction === 'credit_user'
@@ -1385,7 +1469,7 @@ export class FinancialTransactionService {
         financialRepository.setWalletCache(params.userId, financialRepository.formatWalletRow(updated.rows[0]));
       }
 
-      return {
+      const result = {
         success: true,
         journal: { id: journalId, reference: `ADJ-${params.userId}` },
         wallet: {
@@ -1394,6 +1478,13 @@ export class FinancialTransactionService {
           previousBalance: currentBal
         }
       };
+
+      await client.query(
+        'INSERT INTO financial_idempotency (key, operation, status, result) VALUES ($1, $2, $3, $4)',
+        [idempKey, 'executeAdjustment', 'completed', JSON.stringify(result)]
+      );
+
+      return result;
     });
   }
 
@@ -1404,6 +1495,12 @@ export class FinancialTransactionService {
       if (jRes.rows.length === 0) throw new Error('Journal not found');
       const origJournal = jRes.rows[0];
 
+      const revRef = `REV-${origJournal.reference}`;
+      const existingRev = await client.query('SELECT id FROM ledger_journals WHERE reference = $1', [revRef]);
+      if (existingRev.rows.length > 0) {
+        throw new Error(`Journal ${journalId} (${origJournal.reference}) has already been reversed by journal ${existingRev.rows[0].id}.`);
+      }
+
       const entriesRes = await client.query('SELECT * FROM ledger_entries WHERE journal_id = $1', [journalId]);
       if (entriesRes.rows.length === 0) throw new Error('Journal has no entries');
 
@@ -1411,7 +1508,7 @@ export class FinancialTransactionService {
       await client.query(
         `INSERT INTO ledger_journals (id, reference, description, event_type, actor)
          VALUES ($1, $2, $3, 'REVERSAL', $4)`,
-        [revJournalId, `REV-${origJournal.reference}`, `Reversal of ${origJournal.reference}: ${reason}`, actor]
+        [revJournalId, revRef, `Reversal of ${origJournal.reference}: ${reason}`, actor]
       );
 
       const revEntries = entriesRes.rows.map(e => ({

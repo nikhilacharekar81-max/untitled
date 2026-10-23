@@ -291,19 +291,29 @@ router.post('/orders', requireAuth, requireActiveStatus, rateLimit(30, 60_000), 
     const gigOrderId = isGig ? id : undefined;
     const projectOrderId = isProject ? id : undefined;
 
-    let workspaceId = req.body?.workspaceId;
-    if (workspaceId) {
-      const ws = await workspaceService.getWorkspaceAsync(workspaceId);
+    let workspaceId: string;
+    if (isGig) {
+      const ws = await workspaceService.createWorkspaceAsync({
+        buyerId,
+        sellerId,
+        originType: 'gig',
+        originId: req.body?.gigId || id,
+        activeOrderId: id
+      });
+      workspaceId = ws.workspaceId;
+    } else if (req.body?.workspaceId) {
+      const ws = await workspaceService.getWorkspaceAsync(req.body.workspaceId);
       if (!ws) return res.status(404).json({ error: 'Workspace not found.' });
       if (ws.buyerId !== buyerId || ws.sellerId !== sellerId) {
         return res.status(400).json({ error: 'The provided workspace does not match the buyer and seller of this order.' });
       }
+      workspaceId = ws.workspaceId;
     } else {
       const ws = await workspaceService.createWorkspaceAsync({
         buyerId,
         sellerId,
-        originType: isGig ? 'gig' : 'project',
-        originId: req.body?.gigId || req.body?.projectId || id,
+        originType: isProject ? 'project' : 'gig',
+        originId: req.body?.projectId || id,
         activeOrderId: id
       });
       workspaceId = ws.workspaceId;

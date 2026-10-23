@@ -170,6 +170,10 @@ export let categories: Category[] = [
   }
 ];
 
+export function setCategories(newCats: Category[]) {
+  categories = newCats;
+}
+
 function formatSupportTicketRow(r: any): SupportTicket {
   return {
     id: r.id,

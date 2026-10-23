@@ -321,19 +321,6 @@ gigRouter.delete('/gigs/:id', requireAuth, requireActiveStatus, async (req: Requ
 gigRouter.patch('/gigs/:id/feature', requireAuth, requireActiveStatus, async (req: Request, res: Response) => {
   const caller = (req as any).authenticatedUser;
   try {
-    const pool = postgresStore.getPool();
-    const findRes = await pool.query('SELECT * FROM gigs WHERE id = $1', [req.params.id]);
-    if (findRes.rows.length === 0) return res.status(404).json({ error: 'Gig/Service not found' });
-    const g = formatGigRow(findRes.rows[0]);
-
-    if (g.freelancerId !== caller.id) {
-      return res.status(403).json({ error: 'Forbidden: You can only feature your own gigs.' });
-    }
-
-    if (g.featured && g.featuredUntil && new Date(g.featuredUntil) > new Date()) {
-      return res.status(400).json({ error: 'Gig is already actively featured.' });
-    }
-
     const activeSettings = siteSettings.getSettings();
     const fee = activeSettings.marketplace.featuredGigFee;
     if (!fee || fee <= 0) {
@@ -341,18 +328,15 @@ gigRouter.patch('/gigs/:id/feature', requireAuth, requireActiveStatus, async (re
     }
 
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    await postgresStore.executeInTransaction(async (client) => {
-      const walletRes = await client.query('SELECT available_balance FROM wallets WHERE user_id = $1 FOR UPDATE', [caller.id]);
-      if (walletRes.rows.length === 0 || Number(walletRes.rows[0].available_balance) < fee) {
-        throw new Error('Insufficient funds in wallet');
-      }
-      await client.query('UPDATE wallets SET available_balance = available_balance - $1 WHERE user_id = $2', [fee, caller.id]);
-      await client.query('UPDATE users SET wallet_balance = (SELECT available_balance FROM wallets WHERE user_id = $1) WHERE id = $1', [caller.id]);
-      await client.query('INSERT INTO wallet_movements (id, user_id, amount, type, description) VALUES ($1, $2, $3, $4, $5)', [randomUUID(), caller.id, -fee, 'fee', `Featured Gig Fee for #${g.id}`]);
-      await client.query('UPDATE gigs SET featured = TRUE, featured_until = $1 WHERE id = $2', [expiresAt, g.id]);
+    const result = await financialTransactionService.chargeFeaturedGigFee({
+      gigId: req.params.id,
+      sellerId: caller.id,
+      feeAmount: fee,
+      featuredUntil: expiresAt,
+      actor: `user:${caller.id}`
     });
 
-    res.json({ success: true, featured: true, featuredUntil: expiresAt });
+    res.json(result);
   } catch (err: any) {
     console.error('[FeatureGig] Error:', err);
     res.status(500).json({ error: err.message || 'Failed to feature gig' });

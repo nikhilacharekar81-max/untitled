@@ -212,22 +212,12 @@ export async function processProposalAccept(req: any, res: any) {
     await ensureWallet(proj.buyer_id);
     await ensureWallet(proposal.freelancerId);
 
-    const userWorkspaces = await workspaceService.getWorkspacesForUserAsync(proj.buyer_id);
-    let workspace = userWorkspaces.find(w =>
-      w.sellerId === proposal.freelancerId &&
-      w.originType === 'project' &&
-      w.originId === proj.id
-    );
-    let createdNewWorkspace = false;
-    if (!workspace) {
-      workspace = await workspaceService.createWorkspaceAsync({
-        buyerId: proj.buyer_id,
-        sellerId: proposal.freelancerId,
-        originType: 'project',
-        originId: proj.id
-      });
-      createdNewWorkspace = true;
-    }
+    const workspace = await workspaceService.createWorkspaceAsync({
+      buyerId: proj.buyer_id,
+      sellerId: proposal.freelancerId,
+      originType: 'project',
+      originId: proj.id
+    });
 
     const orderId = 'ord_' + randomUUID().slice(0, 12);
     const today = new Date().toISOString().split('T')[0];
@@ -303,7 +293,7 @@ export async function processProposalAccept(req: any, res: any) {
       await postgresStore.getPool().query('DELETE FROM workstream_offers WHERE id = $1', [offer.id]);
       await postgresStore.getPool().query('DELETE FROM messages WHERE order_id = $1', [order.id]);
 
-      if (createdNewWorkspace) {
+      if (workspace) {
         workspaceService.deleteWorkspace(workspace.workspaceId);
       }
 
