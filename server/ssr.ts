@@ -147,6 +147,16 @@ export async function setupSSR(
         initialData.pageType = 'projects';
       } else if (['/freelancers', '/search-freelancers', '/freelancer-search'].includes(pathname)) {
         initialData.pageType = 'freelancers';
+      } else if (pathParts.length >= 2 && (pathParts[0].toLowerCase() === 'gig' || pathParts[0].toLowerCase() === 'gigs')) {
+        const gigId = pathParts[1];
+        const subSlug = pathParts[2];
+        const matchedGig = PUBLIC_GIGS.find(g => g.id === gigId || (g.slug && g.slug.toLowerCase() === gigId.toLowerCase()) || (subSlug && g.slug && g.slug.toLowerCase() === subSlug.toLowerCase()));
+        if (matchedGig) {
+          initialData.pageType = 'gig_detail';
+          initialData.gig = matchedGig;
+        } else {
+          notFound = true;
+        }
       } else if (pathParts.length === 2 && (pathParts[0].toLowerCase() === 'projects' || pathParts[0].toLowerCase() === 'project')) {
         const projId = pathParts[1];
         const matchedProj = PUBLIC_PROJECTS.find(p => p.id === projId || (p.slug && p.slug.toLowerCase() === projId.toLowerCase()));
@@ -163,7 +173,7 @@ export async function setupSSR(
         const matchedGig = PUBLIC_GIGS.find(g => {
           const gUrl = getGigUrl(g).toLowerCase();
           const target = `/${username.toLowerCase()}/${gigSlug.toLowerCase()}`;
-          return gUrl === target || (g.slug && g.slug.toLowerCase() === gigSlug.toLowerCase());
+          return gUrl === target || (g.slug && g.slug.toLowerCase() === gigSlug.toLowerCase()) || g.id === gigSlug;
         });
         if (matchedGig) {
           initialData.pageType = 'gig_detail';
@@ -173,7 +183,7 @@ export async function setupSSR(
         }
       } else if (pathParts.length === 1) {
         const usernameParam = pathParts[0];
-        const matchedUser = PUBLIC_USERS.find(u => (u.username && u.username.toLowerCase() === usernameParam.toLowerCase()) || slugify(u.name) === usernameParam.toLowerCase());
+        const matchedUser = PUBLIC_USERS.find(u => (u.username && u.username.toLowerCase() === usernameParam.toLowerCase()) || slugify(u.name) === usernameParam.toLowerCase() || u.id === usernameParam);
         if (matchedUser) {
           initialData.pageType = 'freelancer_profile';
           initialData.profileUser = matchedUser;

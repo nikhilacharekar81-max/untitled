@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import { createServer } from 'http';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -106,6 +107,8 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   if (IS_PRODUCTION) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+  (req as any).requestId = randomUUID();
+  res.setHeader('X-Request-ID', (req as any).requestId);
   next();
 });
 
@@ -139,15 +142,28 @@ initWebSocketServer(server);
     process.exit(1);
   }
 
-  await setupSSR(app, IS_PROD, __dirname, async () => {
+  await setupSSR(app, IS_PROD, __dirname, async (req) => {
     try {
-      const [gigsRes, usersRes, projectsRes] = await Promise.all([
-        postgresStore.getPool().query("SELECT * FROM gigs WHERE status = 'published'"),
-        postgresStore.getPool().query("SELECT * FROM users WHERE status = 'active'"),
-        postgresStore.getPool().query("SELECT * FROM projects WHERE status = 'open'")
-      ]);
-      return {
-        gigs: gigsRes.rows.map(r => ({
+      const pathname = req.originalUrl.split('?')[0];
+      const pathParts = pathname.split('/').filter(Boolean);
+      
+      let gigs: any[] = [];
+      let users: any[] = [];
+      let projects: any[] = [];
+      
+      // Determine what data is actually needed
+      const isHome = pathname === '/' || pathname === '';
+      const isGigList = pathname === '/gigs' || pathname.startsWith('/categories/');
+      const isProjectList = ['/projects', '/search-projects', '/project-search', '/freelance-jobs'].includes(pathname);
+      const isGigDetail = pathParts.length >= 2 && (pathParts[0].toLowerCase() === 'gig' || pathParts[0].toLowerCase() === 'gigs');
+      const isProjectDetail = pathParts.length === 2 && (pathParts[0].toLowerCase() === 'projects' || pathParts[0].toLowerCase() === 'project');
+      const isUserDetail = pathParts.length === 1;
+
+      const pool = postgresStore.getPool();
+
+      if (isHome || isGigList || isGigDetail) {
+        const gigsRes = await pool.query("SELECT * FROM gigs WHERE status = 'published' LIMIT 50");
+        gigs = gigsRes.rows.map(r => ({
           id: r.id,
           freelancerId: r.freelancer_id,
           freelancerName: r.freelancer_name,
@@ -169,8 +185,12 @@ initWebSocketServer(server);
           status: r.status,
           createdAt: r.created_at,
           extras: r.extras || []
-        })),
-        users: usersRes.rows.map(r => ({
+        }));
+      }
+
+      if (isHome || isUserDetail) {
+        const usersRes = await pool.query("SELECT * FROM users WHERE status = 'active' LIMIT 50");
+        users = usersRes.rows.map(r => ({
           id: r.id,
           name: r.name,
           username: r.username,
@@ -198,8 +218,12 @@ initWebSocketServer(server);
           knownDevices: r.known_devices || [],
           isAvailableNow: Boolean(r.is_available_now),
           notificationPreferences: r.notification_preferences
-        })),
-        projects: projectsRes.rows.map(r => ({
+        }));
+      }
+
+      if (isHome || isProjectList || isProjectDetail) {
+        const projectsRes = await pool.query("SELECT * FROM projects WHERE status = 'open' LIMIT 50");
+        projects = projectsRes.rows.map(r => ({
           id: r.id,
           buyerId: r.buyer_id,
           buyerName: r.buyer_name,
@@ -215,7 +239,13 @@ initWebSocketServer(server);
           skills: r.skills || [],
           createdAt: r.created_at,
           acceptedProposalId: r.accepted_proposal_id || undefined
-        })),
+        }));
+      }
+
+      return {
+        gigs,
+        users,
+        projects,
         categories
       };
     } catch (err) {
@@ -248,9 +278,32 @@ initWebSocketServer(server);
 
 // Graceful shutdown
 async function gracefulShutdown(signal: string) {
-  console.log(`Received ${signal}. Flushing pending writes...`);
-  await postgresStore.flushAll();
-  process.exit(0);
+  console.log(`Received ${signal}. Initiating graceful shutdown...`);
+  
+  // 1. Stop accepting new requests
+  server.close(async () => {
+    console.log('HTTP server closed.');
+    
+    // 2. Close DB connections
+    try {
+      await postgresStore.getPool().end();
+      console.log('Postgres pool closed.');
+    } catch (err) {
+      console.error('Error closing Postgres pool:', err);
+    }
+    
+    // 3. Flush pending writes
+    await postgresStore.flushAll();
+    console.log('Pending writes flushed.');
+    
+    process.exit(0);
+  });
+  
+  // Force exit after 10s if not shut down
+  setTimeout(() => {
+    console.error('Shutdown timeout, forcing exit.');
+    process.exit(1);
+  }, 10000);
 }
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));

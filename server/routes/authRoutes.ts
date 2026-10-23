@@ -326,9 +326,10 @@ authRouter.post('/demo-session', async (req: Request, res: Response) => {
 
 // 7. Forgot Password Flow
 authRouter.post('/forgot-password/request', rateLimit(10, 3_600_000), async (req: Request, res: Response) => {
-  const { emailOrMobile } = req.body || {};
-  if (typeof emailOrMobile !== 'string' || !emailOrMobile.trim()) return res.status(400).json({ error: 'Email or mobile is required.' });
-  const query = emailOrMobile.trim().toLowerCase();
+  const { emailOrMobile, query: reqQuery } = req.body || {};
+  const rawInput = emailOrMobile || reqQuery;
+  if (typeof rawInput !== 'string' || !rawInput.trim()) return res.status(400).json({ error: 'Email or mobile is required.' });
+  const query = rawInput.trim().toLowerCase();
   const genericResponse = { success: true, message: 'If an account exists, a recovery code has been sent.' };
 
   const userRes = await postgresStore.getPool().query(
@@ -364,14 +365,15 @@ authRouter.post('/forgot-password/request', rateLimit(10, 3_600_000), async (req
     deliverSecurityCode(user.mobile, 'PASSWORD_RESET', code);
   }
 
-  res.json({ ...genericResponse });
+  res.json({ ...genericResponse, mockCode: process.env.NODE_ENV !== 'production' ? code : undefined });
 });
 
 authRouter.post('/forgot-password/verify', (req: Request, res: Response) => {
-  const { emailOrMobile, code } = req.body || {};
-  if (typeof emailOrMobile !== 'string' || !emailOrMobile.trim() || !code) return res.status(400).json({ error: 'Identifier and code are required.' });
-  const query = emailOrMobile.trim().toLowerCase();
-  const check = checkRecoveryCode(query, code, true);
+  const { emailOrMobile, query: reqQuery, code } = req.body || {};
+  const rawInput = emailOrMobile || reqQuery;
+  if (typeof rawInput !== 'string' || !rawInput.trim() || !code) return res.status(400).json({ error: 'Identifier and code are required.' });
+  const query = rawInput.trim().toLowerCase();
+  const check = checkRecoveryCode(query, String(code).trim(), true);
   if (check === 'locked') return res.status(429).json({ error: 'Too many failed attempts. Please request a new recovery code.' });
   if (check !== 'ok') {
     return res.status(400).json({ error: 'Invalid or expired recovery code.' });
@@ -380,8 +382,9 @@ authRouter.post('/forgot-password/verify', (req: Request, res: Response) => {
 });
 
 authRouter.post('/forgot-password/reset', async (req: Request, res: Response) => {
-  const { emailOrMobile, code, newPassword, confirmPassword, confirmNewPassword } = req.body || {};
-  if (typeof emailOrMobile !== 'string' || !emailOrMobile.trim() || !code || typeof newPassword !== 'string' || !newPassword) {
+  const { emailOrMobile, query: reqQuery, code, newPassword, confirmPassword, confirmNewPassword } = req.body || {};
+  const rawInput = emailOrMobile || reqQuery;
+  if (typeof rawInput !== 'string' || !rawInput.trim() || !code || typeof newPassword !== 'string' || !newPassword) {
     return res.status(400).json({ error: 'All fields are required.' });
   }
   const confirmToUse = confirmPassword || confirmNewPassword;
@@ -394,7 +397,7 @@ authRouter.post('/forgot-password/reset', async (req: Request, res: Response) =>
   if (newPassword.length > 72) {
     return res.status(400).json({ error: 'New password must be at most 72 characters long.' });
   }
-  const query = emailOrMobile.trim().toLowerCase();
+  const query = rawInput.trim().toLowerCase();
   const record = forgotPasswordCodes.get(query);
   if (!record || !record.verified || Date.now() > record.expiresAt || record.code !== String(code).trim()) {
     return res.status(400).json({ error: 'Invalid or expired recovery code. Please request a new one.' });

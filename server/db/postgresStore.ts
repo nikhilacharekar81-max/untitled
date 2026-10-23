@@ -718,6 +718,46 @@ export class PostgresStore {
     }));
   }
 
+  async listPublicUsers(): Promise<User[]> {
+    if (!isPostgresEnabled()) return [];
+    const res = await this.getPool().query(`
+      SELECT * FROM users 
+      WHERE status = 'active' 
+      AND (is_flagged = FALSE OR is_flagged IS NULL)
+      AND role NOT IN ('admin', 'super_admin', 'support', 'moderator', 'staff', 'internal')
+    `);
+    return res.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      username: r.username || undefined,
+      email: r.email,
+      mobile: r.mobile || undefined,
+      role: r.role,
+      avatar: r.avatar || '',
+      title: r.title || '',
+      rating: Number(r.rating),
+      reviewsCount: Number(r.reviews_count),
+      hourlyRate: Number(r.hourly_rate),
+      earned: Number(r.earned),
+      completedJobs: Number(r.completed_jobs),
+      bio: r.bio || '',
+      skills: r.skills || [],
+      status: r.status,
+      verified: r.verified,
+      emailVerified: r.email_verified,
+      mobileVerified: r.mobile_verified,
+      walletBalance: Number(r.wallet_balance),
+      createdAt: r.created_at,
+      isFlagged: r.is_flagged,
+      flagReason: r.flag_reason || undefined,
+      password: r.password || undefined,
+      sessionVersion: Number(r.session_version || 1),
+      knownDevices: r.known_devices || [],
+      isAvailableNow: r.is_available_now,
+      notificationPreferences: r.notification_preferences || undefined
+    }));
+  }
+
   // --- GIGS ---
   async saveGigs(gigs: Gig[]): Promise<void> {
     return this.withLock('gigs', async () => {

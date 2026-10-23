@@ -59,6 +59,7 @@ export function initWebSocketServer(server: Server): WebSocketServer {
         const queryParams = new URLSearchParams(urlStr.slice(queryIdx));
         const queryToken = queryParams.get('token');
         if (queryToken) {
+          diagnosticService.log('security', 'websocket', 'connection', 'server/websocket.ts', 'query_token_usage', 'INFO', {}, 'WebSocket connection established using token in URL query parameter. This may lead to token leakage in logs.');
           const payload = verifyToken(queryToken);
           if (!payload || !payload.id) {
             try { ws.close(1008, 'Invalid token in query'); } catch {}

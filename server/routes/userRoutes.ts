@@ -7,7 +7,8 @@ import {
   requireAdmin,
   adminActor,
   safeUser,
-  isStaffUser
+  isStaffUser,
+  escapeHtml
 } from '../middleware/auth.js';
 import { siteSettings } from '../../src/server/siteSettings.js';
 import { registerAuditLog } from '../services/orderService.js';
@@ -17,11 +18,123 @@ export const userRouter = Router();
 // Public users list
 userRouter.get('/users', async (req: Request, res: Response) => {
   try {
-    const allUsers = await store.listUsers();
-    const publicUsers = allUsers.filter(isUserPublic).map(sanitizePublicUser);
-    res.json(publicUsers);
+    const publicUsers = await store.listPublicUsers();
+    res.json(publicUsers.map(sanitizePublicUser));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to list users' });
+  }
+});
+
+// Update authenticated user profile
+userRouter.patch('/users/profile', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const authUserId = (req as any).authenticatedUserId;
+    const user = await store.getUser(authUserId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const {
+      name,
+      title,
+      bio,
+      hourlyRate,
+      skills,
+      avatar,
+      isAvailableNow,
+      username
+    } = req.body || {};
+
+    if (typeof name === 'string' && name.trim()) {
+      user.name = escapeHtml(name.trim().slice(0, 80));
+    }
+    if (typeof title === 'string') {
+      user.title = escapeHtml(title.trim().slice(0, 120));
+    }
+    if (typeof bio === 'string') {
+      user.bio = escapeHtml(bio.trim());
+    }
+    if (typeof hourlyRate === 'number' && Number.isFinite(hourlyRate) && hourlyRate >= 0) {
+      user.hourlyRate = hourlyRate;
+    }
+    if (Array.isArray(skills)) {
+      user.skills = skills.map((s: any) => String(s).trim()).filter(Boolean);
+    } else if (typeof skills === 'string') {
+      user.skills = skills.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    if (typeof avatar === 'string' && avatar.trim()) {
+      user.avatar = avatar.trim();
+    }
+    if (typeof isAvailableNow === 'boolean') {
+      user.isAvailableNow = isAvailableNow;
+    }
+    if (typeof username === 'string' && username.trim() && username.trim().toLowerCase() !== user.username?.toLowerCase()) {
+      const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+      if (cleanUsername) {
+        const check = await postgresStore.getPool().query('SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id <> $2', [cleanUsername, user.id]);
+        if (check.rows.length > 0) {
+          return res.status(409).json({ error: 'Username is already taken.' });
+        }
+        user.username = cleanUsername;
+      }
+    }
+
+    await store.saveUser(user);
+
+    if (user.role === 'freelancer') {
+      await postgresStore.getPool().query(
+        `UPDATE gigs SET 
+          freelancer_name = $1, 
+          freelancer_username = $2, 
+          freelancer_avatar = $3 
+         WHERE freelancer_id = $4`,
+        [user.name, user.username || null, user.avatar || null, user.id]
+      );
+    }
+
+    res.json({ success: true, user: safeUser(user) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update profile' });
+  }
+});
+
+// Update user email address
+userRouter.patch('/users/email', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const authUserId = (req as any).authenticatedUserId;
+    const user = await store.getUser(authUserId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { email } = req.body || {};
+    if (typeof email !== 'string' || !email.trim()) {
+      return res.status(400).json({ error: 'Email is required.' });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail === user.email.toLowerCase()) {
+      return res.json({ success: true, user: safeUser(user) });
+    }
+
+    const check = await postgresStore.getPool().query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id <> $2', [normalizedEmail, user.id]);
+    if (check.rows.length > 0) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+
+    user.email = normalizedEmail;
+    await store.saveUser(user);
+    res.json({ success: true, user: safeUser(user) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update email' });
+  }
+});
+
+// Get user profile by ID
+userRouter.get('/users/:id', async (req: Request, res: Response) => {
+  try {
+    const user = await store.getUser(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(safeUser(user));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch user' });
   }
 });
 

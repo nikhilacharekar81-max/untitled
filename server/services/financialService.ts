@@ -357,6 +357,19 @@ export class FinancialRepository {
     totalCredits = Number(totalCredits.toFixed(2));
     const isBalanced = Math.abs(totalDebits - totalCredits) < 0.01;
 
+    if (!isBalanced) {
+      diagnosticService.log(
+        'critical',
+        'FinancialRepository',
+        'getReconciliationSummary',
+        'server/services/financialService.ts',
+        'reconciliation_check',
+        'FAILED',
+        { variance: Number(Math.abs(totalDebits - totalCredits).toFixed(2)) },
+        'Financial reconciliation mismatch detected.'
+      );
+    }
+
     return {
       trialBalance: {
         totalDebits,

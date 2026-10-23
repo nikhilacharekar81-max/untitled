@@ -783,11 +783,16 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
 
           if (parts.length === 2 && parts[0] === 'categories') {
             const catSlug = parts[1];
-            const matchedCategory = PPH_CATEGORIES.find(c => c.slug === catSlug) ||
-              PPH_CATEGORIES.flatMap(c => c.subcategories).find(s => s.slug === catSlug);
+            const matchedParent = PPH_CATEGORIES.find(c => c.slug === catSlug);
+            const matchedSub = !matchedParent ? PPH_CATEGORIES.flatMap(c => c.subcategories).find(s => s.slug === catSlug) : undefined;
+            const matchedCategory = matchedParent || matchedSub;
             const categoryName = matchedCategory ? matchedCategory.name : 'All';
             const categoryFilteredGigs = gigs.filter(g => {
-              if (categoryName !== 'All' && g.category !== categoryName) return false;
+              if (matchedParent) {
+                if (g.category !== matchedParent.name && slugify(g.category) !== matchedParent.slug) return false;
+              } else if (matchedSub) {
+                if (g.subcategory?.toLowerCase() !== matchedSub.name.toLowerCase() && slugify(g.subcategory || '') !== matchedSub.slug) return false;
+              }
               if (searchQuery.trim() && !g.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
               return true;
             });

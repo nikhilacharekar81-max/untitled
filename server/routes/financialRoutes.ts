@@ -4,8 +4,6 @@ import { randomUUID, createHmac, timingSafeEqual } from 'crypto';
 import {
   store,
   cleanAllStoreData,
-  financeLedger,
-  FinanceLedgerEngine,
   type Message,
   type Payout,
   type Dispute,
@@ -55,6 +53,7 @@ import {
   failPayout,
   retryPayout
 } from '../services/payoutService.js';
+import { DEFAULT_FEE_CONFIG, calculateOrderFees } from '../../src/shared/fees.js';
 
 interface PaymentMethodRecord {
   id: string;
@@ -208,8 +207,10 @@ router.get('/fees/quote', async (req: Request, res: Response) => {
       gigPrice = Number(req.query.amount);
     }
     if (!Number.isFinite(gigPrice) || gigPrice < 0) return res.status(400).json({ error: 'A valid gigId or amount is required.' });
-    const q = financeLedger.quoteOrder(gigPrice);
-    res.json({ ...q, config: financeLedger.getFeeConfig() });
+    
+    // Authoritative fee calculation
+    const q = calculateOrderFees(gigPrice, DEFAULT_FEE_CONFIG);
+    res.json({ ...q, config: DEFAULT_FEE_CONFIG });
   } catch (err: any) {
     res.status(err.status || 400).json({ error: err.message });
   }

@@ -81,6 +81,7 @@ export interface StoreInterface {
   getOrder(id: string): Promise<Order | undefined>;
   saveOrder(order: Order): Promise<void>;
   listOrders(): Promise<Order[]>;
+  updateOrderStatus(orderId: string, updates: Record<string, any>, allowedStatuses: string[]): Promise<boolean>;
   listMessages(orderId: string): Promise<Message[]>;
   addMessage(message: Message): Promise<void>;
   addReview(review: Review): Promise<void>;
@@ -88,6 +89,7 @@ export interface StoreInterface {
   getUser(id: string): Promise<User | undefined>;
   saveUser(user: User): Promise<void>;
   listUsers(): Promise<User[]>;
+  listPublicUsers(): Promise<User[]>;
   getUploadRecord(filename: string): Promise<WorkstreamUploadRecord | undefined>;
   saveUploadRecord(filename: string, record: WorkstreamUploadRecord): Promise<void>;
   listUploadRecords(): Promise<Record<string, WorkstreamUploadRecord>>;
@@ -253,6 +255,21 @@ export class PostgresAsyncStore implements StoreInterface {
     return await postgresStore.listOrders();
   }
 
+  async updateOrderStatus(orderId: string, updates: Record<string, any>, allowedStatuses: string[]): Promise<boolean> {
+    const keys = Object.keys(updates);
+    const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
+    const values = keys.map(k => updates[k]);
+    
+    const query = `
+      UPDATE orders 
+      SET ${setClause}
+      WHERE id = $1 AND status = ANY($${keys.length + 2})
+    `;
+    const res = await postgresStore.getPool().query(query, [orderId, ...values, allowedStatuses]);
+    return res.rowCount !== null && res.rowCount > 0;
+  }
+
+
   async listMessages(orderId: string): Promise<Message[]> {
     const res = await postgresStore.getPool().query(
       'SELECT * FROM messages WHERE order_id = $1 ORDER BY timestamp ASC',
@@ -412,6 +429,10 @@ export class PostgresAsyncStore implements StoreInterface {
 
   async listUsers(): Promise<User[]> {
     return await postgresStore.listUsers();
+  }
+
+  async listPublicUsers(): Promise<User[]> {
+    return await postgresStore.listPublicUsers();
   }
 
   async getUploadRecord(filename: string): Promise<WorkstreamUploadRecord | undefined> {

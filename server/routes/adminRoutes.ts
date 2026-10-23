@@ -232,7 +232,7 @@ router.get('/categories', (_req: Request, res: Response) => {
   res.json(categories);
 });
 
-router.post('/admin/categories', requireAdmin, (req: Request, res: Response) => {
+router.post('/admin/categories', requireAdmin, async (req: Request, res: Response) => {
   const { name, slug } = req.body;
   if (!name) return res.status(400).json({ error: 'Category name is required' });
   const catSlug = slug || name.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -245,6 +245,7 @@ router.post('/admin/categories', requireAdmin, (req: Request, res: Response) => 
     subcategories: []
   };
   categories.push(newCat);
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),
@@ -259,7 +260,7 @@ router.post('/admin/categories', requireAdmin, (req: Request, res: Response) => 
   res.json(categories);
 });
 
-router.post('/admin/categories/bulk-delete', requireAdmin, (req: Request, res: Response) => {
+router.post('/admin/categories/bulk-delete', requireAdmin, async (req: Request, res: Response) => {
   const { categoryIds = [], subcategoryPairs = [] } = req.body;
   if (Array.isArray(categoryIds) && categoryIds.length > 0) {
     categories = categories.filter(c => !categoryIds.includes(c.id));
@@ -272,6 +273,7 @@ router.post('/admin/categories/bulk-delete', requireAdmin, (req: Request, res: R
       }
     });
   }
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),
@@ -286,12 +288,13 @@ router.post('/admin/categories/bulk-delete', requireAdmin, (req: Request, res: R
   res.json(categories);
 });
 
-router.patch('/admin/categories/:id', requireAdmin, (req: Request, res: Response) => {
+router.patch('/admin/categories/:id', requireAdmin, async (req: Request, res: Response) => {
   const cat = categories.find(c => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: 'Category not found' });
   if (req.body.name) cat.name = req.body.name;
   if (req.body.slug) cat.slug = req.body.slug;
   if (typeof req.body.enabled === 'boolean') cat.enabled = req.body.enabled;
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),
@@ -306,10 +309,11 @@ router.patch('/admin/categories/:id', requireAdmin, (req: Request, res: Response
   res.json(categories);
 });
 
-router.patch('/admin/categories/:id/toggle', requireAdmin, (req: Request, res: Response) => {
+router.patch('/admin/categories/:id/toggle', requireAdmin, async (req: Request, res: Response) => {
   const cat = categories.find(c => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: 'Category not found' });
   cat.enabled = !cat.enabled;
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),
@@ -324,11 +328,12 @@ router.patch('/admin/categories/:id/toggle', requireAdmin, (req: Request, res: R
   res.json(categories);
 });
 
-router.delete('/admin/categories/:id', requireAdmin, (req: Request, res: Response) => {
+router.delete('/admin/categories/:id', requireAdmin, async (req: Request, res: Response) => {
   const index = categories.findIndex(c => c.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: 'Category not found' });
   const deleted = categories[index];
   categories.splice(index, 1);
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),
@@ -343,7 +348,7 @@ router.delete('/admin/categories/:id', requireAdmin, (req: Request, res: Respons
   res.json(categories);
 });
 
-router.post('/admin/categories/:id/subcategories', requireAdmin, (req: Request, res: Response) => {
+router.post('/admin/categories/:id/subcategories', requireAdmin, async (req: Request, res: Response) => {
   const cat = categories.find(c => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: 'Parent category not found' });
   const { name, slug } = req.body;
@@ -356,6 +361,7 @@ router.post('/admin/categories/:id/subcategories', requireAdmin, (req: Request, 
     enabled: true
   };
   cat.subcategories.push(newSub);
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),
@@ -370,7 +376,7 @@ router.post('/admin/categories/:id/subcategories', requireAdmin, (req: Request, 
   res.json(categories);
 });
 
-router.patch('/admin/categories/:id/subcategories/:subId', requireAdmin, (req: Request, res: Response) => {
+router.patch('/admin/categories/:id/subcategories/:subId', requireAdmin, async (req: Request, res: Response) => {
   const cat = categories.find(c => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: 'Parent category not found' });
   const sub = cat.subcategories.find(s => s.id === req.params.subId);
@@ -378,6 +384,7 @@ router.patch('/admin/categories/:id/subcategories/:subId', requireAdmin, (req: R
   if (req.body.name) sub.name = req.body.name;
   if (req.body.slug) sub.slug = req.body.slug;
   if (typeof req.body.enabled === 'boolean') sub.enabled = req.body.enabled;
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),
@@ -392,12 +399,13 @@ router.patch('/admin/categories/:id/subcategories/:subId', requireAdmin, (req: R
   res.json(categories);
 });
 
-router.patch('/admin/categories/:id/subcategories/:subId/toggle', requireAdmin, (req: Request, res: Response) => {
+router.patch('/admin/categories/:id/subcategories/:subId/toggle', requireAdmin, async (req: Request, res: Response) => {
   const cat = categories.find(c => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: 'Parent category not found' });
   const sub = cat.subcategories.find(s => s.id === req.params.subId);
   if (!sub) return res.status(404).json({ error: 'Subcategory not found' });
   sub.enabled = !sub.enabled;
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),
@@ -412,13 +420,14 @@ router.patch('/admin/categories/:id/subcategories/:subId/toggle', requireAdmin, 
   res.json(categories);
 });
 
-router.delete('/admin/categories/:id/subcategories/:subId', requireAdmin, (req: Request, res: Response) => {
+router.delete('/admin/categories/:id/subcategories/:subId', requireAdmin, async (req: Request, res: Response) => {
   const cat = categories.find(c => c.id === req.params.id);
   if (!cat) return res.status(404).json({ error: 'Parent category not found' });
   const subIndex = cat.subcategories.findIndex(s => s.id === req.params.subId);
   if (subIndex === -1) return res.status(404).json({ error: 'Subcategory not found' });
   const deletedSub = cat.subcategories[subIndex];
   cat.subcategories.splice(subIndex, 1);
+  await postgresStore.saveCategories(categories);
 
   registerAuditLog({
     id: 'log_' + Date.now(),

@@ -542,3 +542,18 @@ export async function processAutoAcceptOrders(customNow?: number): Promise<Array
 
   return processed;
 }
+
+export async function atomicUpdateOrder(orderId: string, updates: Record<string, any>, allowedStatuses: string[]): Promise<boolean> {
+  const pool = postgresStore.getPool();
+  const keys = Object.keys(updates);
+  const setClause = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
+  const values = keys.map(k => updates[k]);
+  
+  const query = `
+    UPDATE orders 
+    SET ${setClause}
+    WHERE id = $1 AND status = ANY($${keys.length + 2})
+  `;
+  const res = await pool.query(query, [orderId, ...values, allowedStatuses]);
+  return res.rowCount !== null && res.rowCount > 0;
+}

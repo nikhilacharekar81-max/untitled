@@ -7,6 +7,7 @@ import {
   Eye, ArrowLeft, Globe, Award, Image as ImageIcon,
   Briefcase, Save, Sparkles, X, Upload
 } from 'lucide-react';
+import { fetchWithRetry } from '../../utils/fetchRetry';
 
 interface PortfolioItem {
   id: string;
@@ -198,7 +199,7 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
   };
 
   // Save all profile changes
-  const handleSaveAll = (e?: React.FormEvent) => {
+  const handleSaveAll = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const updatedUser: UserAccount = {
       ...user,
@@ -212,7 +213,35 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({
     };
 
     updateCurrentUser(updatedUser);
-    showToastMsg('Your profile has been saved successfully!');
+
+    try {
+      const res = await fetchWithRetry('/api/users/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          title,
+          hourlyRate,
+          bio,
+          avatar: avatarUrl,
+          skills,
+          isAvailableNow
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          updateCurrentUser(data.user);
+        }
+        showToastMsg('Your profile has been saved successfully!');
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToastMsg(errData.error || 'Failed to save profile changes to database.');
+      }
+    } catch (err) {
+      console.error('Failed to persist profile:', err);
+      showToastMsg('Saved locally, but network error persisting to server.');
+    }
   };
 
   // View public profile

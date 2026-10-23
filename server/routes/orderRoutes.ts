@@ -706,13 +706,6 @@ router.post('/orders/:id/deliverable', requireAuth, requireActiveStatus, async (
       type: isDraft ? 'draft' : 'deliverable'
     }));
 
-    order.deliverableFiles.push(...uploadedFiles);
-    order.status = isDraft ? 'draft_review' : 'delivered';
-    const sanitizedNotes = trimmedNotes ? escapeHtml(trimmedNotes) : '';
-    const storedReference = trimmedReference.slice(0, 2000);
-    order.deliveryNotes = sanitizedNotes;
-    order.deliveryReference = storedReference;
-
     const version = order.deliveryHistory.length + 1;
     const deliveredAt = new Date().toISOString();
     const projectResponseDeadline = order.orderType === 'project'
@@ -844,7 +837,17 @@ router.post('/orders/:id/deliverable', requireAuth, requireActiveStatus, async (
       }
     }
 
-    await store.saveOrder(order);
+    const success = await store.updateOrderStatus(orderId, {
+      status: isDraft ? 'draft_review' : 'delivered',
+      deliverable_files: JSON.stringify(order.deliverableFiles),
+      delivery_history: JSON.stringify(order.deliveryHistory),
+      delivery_notes: sanitizedNotes,
+      delivery_reference: storedReference,
+      revisions: JSON.stringify(order.revisions),
+      response_deadline: order.responseDeadline || null
+    }, allowedStatuses);
+
+    if (!success) return res.status(409).json({ error: 'Order state changed concurrently. Please retry.' });
     orderIndex.set(order.id, order);
 
     res.json({ success: true, files: uploadedFiles, file: uploadedFiles[0], offer: createdInvoiceOffer, order: enrichOrderWithServiceInfo(order) });

@@ -107,23 +107,7 @@ export function workstreamFileReferencedBy(filename: string): Array<{ buyerId: s
   return [];
 }
 
-export function canAccessWorkstreamFile(user: any, filename: string): boolean {
-  if (!user) {
-    diagnosticService.log(
-      'security',
-      'accessControl',
-      'canAccessWorkstreamFile',
-      'server/access.ts',
-      'check_file_access',
-      'INTERCEPTED',
-      { filename },
-      'Unauthenticated file access attempt'
-    );
-    return false;
-  }
-  if (isStaffUser(user)) return true;
-  return true;
-}
+export { canAccessWorkstreamFile } from './services/workstreamService.js';
 
 /** A message attachment must be a file the sender uploaded (or staff attaching one that exists). */
 export function validateMessageFileInfo(fileInfo: any, sender: any):
