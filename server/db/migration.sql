@@ -346,8 +346,10 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancellation_type VARCHAR(32);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS review_window_restarted_at VARCHAR(64);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS response_deadline VARCHAR(64);
 ALTER TABLE proposals ADD COLUMN IF NOT EXISTS workstream_order_id VARCHAR(64);
-ALTER TABLE proposals ADD COLUMN IF NOT EXISTS offer_id VARCHAR(64);
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS moderation_status VARCHAR(32);
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS order_id VARCHAR(64);
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS workspace_id VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_orders_workspace_id ON orders(workspace_id);
 
 CREATE TABLE IF NOT EXISTS project_clarifications (
   id VARCHAR(64) PRIMARY KEY,

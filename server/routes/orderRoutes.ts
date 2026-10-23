@@ -293,13 +293,13 @@ router.post('/orders', requireAuth, requireActiveStatus, rateLimit(30, 60_000), 
 
     let workspaceId = req.body?.workspaceId;
     if (workspaceId) {
-      const ws = workspaceService.getWorkspace(workspaceId);
+      const ws = await workspaceService.getWorkspaceAsync(workspaceId);
       if (!ws) return res.status(404).json({ error: 'Workspace not found.' });
       if (ws.buyerId !== buyerId || ws.sellerId !== sellerId) {
         return res.status(400).json({ error: 'The provided workspace does not match the buyer and seller of this order.' });
       }
     } else {
-      const ws = workspaceService.createWorkspace({
+      const ws = await workspaceService.createWorkspaceAsync({
         buyerId,
         sellerId,
         originType: isGig ? 'gig' : 'project',
@@ -351,6 +351,7 @@ router.post('/orders', requireAuth, requireActiveStatus, rateLimit(30, 60_000), 
       };
     }
 
+    await workspaceService.ensureWorkspaceForOrderAsync(newOrd);
     const enriched = enrichOrderWithServiceInfo(newOrd);
     recordOrder(enriched);
     await store.saveOrder(enriched);

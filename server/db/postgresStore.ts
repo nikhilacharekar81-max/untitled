@@ -173,6 +173,9 @@ class PGlitePool {
 
 export function getPool(): pkg.Pool {
   if (!isRemotePostgresConfigured()) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: Production environment requires a configured PostgreSQL database (DATABASE_URL or SQL_HOST). Fallback to local PGlite is disabled in production.');
+    }
     if (!global._appMockPool) {
       const pgDataDir = process.env.NODE_ENV === 'test'
         ? undefined
@@ -1543,10 +1546,25 @@ export class PostgresStore {
   async saveUploadRecord(filename: string, record: WorkstreamUploadRecord): Promise<void> {
     return this.withLock('uploads', async () => {
       await this.getPool().query(
-        `INSERT INTO uploads (filename, owner_id, original_name, mime, size, created_at, sha256)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (filename) DO UPDATE SET owner_id = EXCLUDED.owner_id, size = EXCLUDED.size, original_name = EXCLUDED.original_name`,
-        [filename, record.ownerId, record.originalName || null, record.mime || null, record.size || 0, record.createdAt, record.sha256 || null]
+        `INSERT INTO uploads (filename, owner_id, original_name, mime, size, created_at, sha256, order_id, workspace_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (filename) DO UPDATE SET 
+           owner_id = EXCLUDED.owner_id, 
+           size = EXCLUDED.size, 
+           original_name = EXCLUDED.original_name,
+           order_id = COALESCE(EXCLUDED.order_id, uploads.order_id),
+           workspace_id = COALESCE(EXCLUDED.workspace_id, uploads.workspace_id)`,
+        [
+          filename,
+          record.ownerId,
+          record.originalName || null,
+          record.mime || null,
+          record.size || 0,
+          record.createdAt,
+          record.sha256 || null,
+          record.orderId || null,
+          record.workspaceId || null
+        ]
       );
     });
   }
@@ -1568,7 +1586,9 @@ export class PostgresStore {
         mime: r.mime || undefined,
         size: Number(r.size),
         createdAt: r.created_at,
-        sha256: r.sha256 || undefined
+        sha256: r.sha256 || undefined,
+        orderId: r.order_id || undefined,
+        workspaceId: r.workspace_id || undefined
       };
     }
     return out;

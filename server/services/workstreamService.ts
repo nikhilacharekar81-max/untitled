@@ -190,10 +190,68 @@ export function workstreamFilenameFromUrl(url: unknown): string | null {
   return null;
 }
 
-export function canAccessWorkstreamFile(user: any, filename: string): boolean {
+export async function canAccessWorkstreamFile(user: any, filename: string): Promise<boolean> {
   if (!user) return false;
   if (isStaffUser(user)) return true;
-  return true;
+
+  try {
+    const rec = await store.getUploadRecord(filename);
+    if (rec) {
+      if (rec.orderId) {
+        const order = await store.getOrder(rec.orderId);
+        if (order && (user.id === order.buyerId || user.id === order.sellerId)) {
+          return true;
+        }
+      }
+      if (rec.workspaceId) {
+        const ws = await postgresStore.getPool().query('SELECT buyer_id, seller_id FROM workspaces WHERE workspace_id = $1', [rec.workspaceId]);
+        if (ws.rows.length > 0) {
+          const row = ws.rows[0];
+          if (user.id === row.buyer_id || user.id === row.seller_id) {
+            return true;
+          }
+        }
+      }
+      if (rec.ownerId === user.id) {
+        return true;
+      }
+    }
+
+    // Check if filename appears in messages, deliverable files, or offers for an order where user is participant
+    const pool = postgresStore.getPool();
+    const matchRes = await pool.query(`
+      SELECT o.id as order_id, o.workspace_id, o.buyer_id, o.seller_id
+      FROM orders o
+      WHERE (o.buyer_id = $1 OR o.seller_id = $1)
+        AND (
+          o.deliverable_files::text LIKE $2
+          OR o.delivery_history::text LIKE $2
+          OR EXISTS (
+            SELECT 1 FROM messages m WHERE m.order_id = o.id AND (m.file_info::text LIKE $2 OR m.metadata::text LIKE $2)
+          )
+          OR EXISTS (
+            SELECT 1 FROM workstream_offers wo WHERE wo.order_id = o.id AND wo.metadata::text LIKE $2
+          )
+        )
+      LIMIT 1
+    `, [user.id, `%${filename}%`]);
+
+    if (matchRes.rows.length > 0) {
+      const match = matchRes.rows[0];
+      if (rec) {
+        await store.saveUploadRecord(filename, {
+          ...rec,
+          orderId: match.order_id,
+          workspaceId: match.workspace_id || undefined
+        });
+      }
+      return true;
+    }
+  } catch (err) {
+    console.error(`[canAccessWorkstreamFile] Authorization check error for file ${filename}:`, err);
+  }
+
+  return false;
 }
 
 export function validateMessageFileInfo(fileInfo: any, sender: any):

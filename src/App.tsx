@@ -43,8 +43,16 @@ import { SettingsPage } from './components/SettingsPage';
 import { UserWalletsLedgerModule } from './components/UserWalletsLedgerModule';
 import { PaymentsModule } from './components/PaymentsModule';
 import { LoginModal, SignupModal, UserSwitchModal, ForgotPasswordModal } from './components/modals';
-import { slugify } from './utils/slugify';
+import { slugify, getGigUrl } from './utils/slugify';
 import { PPH_CATEGORIES } from './components/HeaderCategoriesNav';
+import { ProjectDetailView } from './components/marketplace/ProjectDetailView';
+import { ProjectSearchView } from './components/marketplace/ProjectSearchView';
+import { FreelancerSearchView } from './components/marketplace/FreelancerSearchView';
+import { BuyerActivityView } from './components/marketplace/BuyerActivityView';
+import { CreateGigView } from './components/gigs/CreateGigView';
+import { GigDetailView } from './components/gigs/GigDetailView';
+import { EditProfilePage } from './components/profile/EditProfilePage';
+import { FreelancerProfileView } from './components/profile/FreelancerProfileView';
 import { getAuthToken, setAuthToken, clearAuthToken, requestDemoSession, installAuthFetch } from './utils/authToken';
 import { getDeviceId } from './utils/deviceId';
 
@@ -252,7 +260,8 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
     if (typeof window !== 'undefined') {
       window.history.pushState({}, '', to);
     }
-    if (to === '/workstreams' || to === '/messages' || to === '/orders') {
+    const isTargetWorkstreamSubroute = /^\/(?:workstream|workstreams|messages|orders)\/[^/?#]+/.test(to);
+    if (!isTargetWorkstreamSubroute) {
       setSelectedOrder(null);
     }
     setPath(to);
@@ -404,7 +413,7 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
             navigate={navigate}
             refresh={async () => { await refresh(); }}
           />
-        ) : isWorkstreamRoute || activeWorkstreamOrder ? (
+        ) : isWorkstreamRoute ? (
           activeWorkstreamOrder ? (
             <WorkstreamWorkspace 
               order={activeWorkstreamOrder}
@@ -530,7 +539,7 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
               />
             </div>
           )
-        ) : path.startsWith('/wallets') ? (
+        ) : path === '/wallet' || path.startsWith('/wallet') || path.startsWith('/wallets') ? (
           <UserWalletsLedgerModule currentUser={effectiveUser} />
         ) : path.startsWith('/payments') ? (
           <PaymentsModule currentUser={effectiveUser} />
@@ -540,37 +549,290 @@ export default function App({ initialPath = '/', initialData }: { initialPath?: 
             updateCurrentUser={setCurrentUser}
             navigate={navigate}
           />
-        ) : (
-          <MarketplaceGigsView 
-            filteredGigs={filteredGigs}
-            projects={projects}
-            currentCategory={currentCategory}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            activeDropdown={activeDropdown}
-            setActiveDropdown={setActiveDropdown}
-            serviceOptionFilter={serviceOptionFilter}
-            setServiceOptionFilter={setServiceOptionFilter}
-            sellerLevelFilter={sellerLevelFilter}
-            setSellerLevelFilter={setSellerLevelFilter}
-            budgetFilter={budgetFilter}
-            setBudgetFilter={setBudgetFilter}
-            deliveryTimeFilter={deliveryTimeFilter}
-            setDeliveryTimeFilter={setDeliveryTimeFilter}
-            onlineNowOnly={onlineNowOnly}
-            setOnlineNowOnly={setOnlineNowOnly}
-            gigViewMode={gigViewMode}
-            setGigViewMode={setGigViewMode}
-            likedGigIds={likedGigIds}
-            handleToggleLike={handleToggleLike}
-            navigate={navigate}
-            getGigUrl={(g) => `/gig/${g.id}/${slugify(g.title)}`}
-            currentUser={effectiveUser}
-            setIsSignupModalOpen={setIsSignupOpen}
-            slugify={slugify}
-            CATEGORY_SLUGS={Object.fromEntries(PPH_CATEGORIES.map(c => [c.name, c.slug]))}
+        ) : path === '/projects' || path.startsWith('/projects?') ? (
+          <ProjectSearchView 
+            projects={projects} 
+            navigate={navigate} 
+            currentUser={effectiveUser} 
+            query={path.includes('?') ? path.substring(path.indexOf('?')) : ''} 
           />
-        )}
+        ) : path.startsWith('/projects/') || path.startsWith('/project/') ? (
+          (() => {
+            const projId = path.split('/')[2];
+            const targetProject = projects.find(p => p.id === projId || p.slug === projId || slugify(p.title) === projId);
+            if (targetProject) {
+              return (
+                <ProjectDetailView 
+                  project={targetProject}
+                  currentUser={effectiveUser}
+                  navigate={navigate}
+                  allProjects={projects}
+                  proposals={proposals}
+                  orders={orders}
+                  onRefresh={refresh}
+                />
+              );
+            }
+            return <ProjectSearchView projects={projects} navigate={navigate} currentUser={effectiveUser} />;
+          })()
+        ) : path === '/freelancers' || path.startsWith('/freelancers?') ? (
+          <FreelancerSearchView 
+            usersList={users} 
+            gigs={gigs} 
+            navigate={navigate} 
+            currentUser={effectiveUser} 
+            setIsSignupModalOpen={setIsSignupOpen} 
+            slugify={slugify} 
+            query={path.includes('?') ? path.substring(path.indexOf('?')) : ''} 
+          />
+        ) : path === '/buyer-activity' || path === '/freelance-activity' || path === '/activity' ? (
+          <BuyerActivityView 
+            projects={projects} 
+            orders={orders} 
+            offers={[]} 
+            currentUser={effectiveUser} 
+            navigate={navigate} 
+          />
+        ) : path === '/create-gig' ? (
+          <CreateGigView 
+            newGigTitle="" 
+            setNewGigTitle={() => {}} 
+            newGigCat="technology-programming" 
+            setNewGigCat={() => {}} 
+            newGigDesc="" 
+            setNewGigDesc={() => {}} 
+            newGigPrice={50} 
+            setNewGigPrice={() => {}} 
+            newGigDays={3} 
+            setNewGigDays={() => {}} 
+            isOptimizingGig={false} 
+            handleOptimizeGigWithAI={() => {}} 
+            newGigExtras={[]} 
+            extraTitleInput="" 
+            setExtraTitleInput={() => {}} 
+            extraPriceInput={10} 
+            setExtraPriceInput={() => {}} 
+            handleAddGigExtra={() => {}} 
+            handleRemoveGigExtra={() => {}} 
+            handlePublishGig={(e) => { e.preventDefault(); navigate('/gigs'); }} 
+          />
+        ) : path === '/edit-profile' ? (
+          <EditProfilePage 
+            currentUser={effectiveUser} 
+            updateCurrentUser={setCurrentUser} 
+            navigate={navigate} 
+          />
+        ) : path.startsWith('/profile/') ? (
+          (() => {
+            const uname = path.split('/')[2];
+            const targetUser = users.find(u => u.username === uname || slugify(u.name) === uname || u.id === uname);
+            if (targetUser) {
+              return <FreelancerProfileView profileUser={targetUser} currentUser={effectiveUser} gigs={gigs} reviews={appData.reviews} onNavigate={navigate} />;
+            }
+            return (
+              <MarketplaceGigsView 
+                filteredGigs={filteredGigs}
+                projects={projects}
+                currentCategory={currentCategory}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                activeDropdown={activeDropdown}
+                setActiveDropdown={setActiveDropdown}
+                serviceOptionFilter={serviceOptionFilter}
+                setServiceOptionFilter={setServiceOptionFilter}
+                sellerLevelFilter={sellerLevelFilter}
+                setSellerLevelFilter={setSellerLevelFilter}
+                budgetFilter={budgetFilter}
+                setBudgetFilter={setBudgetFilter}
+                deliveryTimeFilter={deliveryTimeFilter}
+                setDeliveryTimeFilter={setDeliveryTimeFilter}
+                onlineNowOnly={onlineNowOnly}
+                setOnlineNowOnly={setOnlineNowOnly}
+                gigViewMode={gigViewMode}
+                setGigViewMode={setGigViewMode}
+                likedGigIds={likedGigIds}
+                handleToggleLike={handleToggleLike}
+                navigate={navigate}
+                getGigUrl={getGigUrl}
+                currentUser={effectiveUser}
+                setIsSignupModalOpen={setIsSignupOpen}
+                slugify={slugify}
+                CATEGORY_SLUGS={Object.fromEntries(PPH_CATEGORIES.map(c => [c.name, c.slug]))}
+              />
+            );
+          })()
+        ) : path.startsWith('/gig/') || path.startsWith('/gigs/') ? (
+          (() => {
+            const parts = path.split('/').filter(Boolean);
+            const identifier = parts[1];
+            const targetGig = gigs.find(g => g.id === identifier || g.slug === identifier || slugify(g.title) === parts[2]);
+            if (targetGig) {
+              return (
+                <GigDetailView 
+                  currentGig={targetGig} 
+                  gigs={gigs} 
+                  reviews={appData.reviews} 
+                  orders={orders} 
+                  currentUser={effectiveUser} 
+                  navigate={navigate} 
+                  handleContactSeller={() => navigate('/messages')} 
+                  handleCreateOrder={() => navigate('/messages')} 
+                  slugify={slugify} 
+                />
+              );
+            }
+            return (
+              <MarketplaceGigsView 
+                filteredGigs={filteredGigs}
+                projects={projects}
+                currentCategory={currentCategory}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                activeDropdown={activeDropdown}
+                setActiveDropdown={setActiveDropdown}
+                serviceOptionFilter={serviceOptionFilter}
+                setServiceOptionFilter={setServiceOptionFilter}
+                sellerLevelFilter={sellerLevelFilter}
+                setSellerLevelFilter={setSellerLevelFilter}
+                budgetFilter={budgetFilter}
+                setBudgetFilter={setBudgetFilter}
+                deliveryTimeFilter={deliveryTimeFilter}
+                setDeliveryTimeFilter={setDeliveryTimeFilter}
+                onlineNowOnly={onlineNowOnly}
+                setOnlineNowOnly={setOnlineNowOnly}
+                gigViewMode={gigViewMode}
+                setGigViewMode={setGigViewMode}
+                likedGigIds={likedGigIds}
+                handleToggleLike={handleToggleLike}
+                navigate={navigate}
+                getGigUrl={getGigUrl}
+                currentUser={effectiveUser}
+                setIsSignupModalOpen={setIsSignupOpen}
+                slugify={slugify}
+                CATEGORY_SLUGS={Object.fromEntries(PPH_CATEGORIES.map(c => [c.name, c.slug]))}
+              />
+            );
+          })()
+        ) : (() => {
+          // Dynamic path resolution for /:username/:gigSlug, /:username, /categories/:slug
+          const cleanPath = path.split('?')[0].split('#')[0];
+          const parts = cleanPath.split('/').filter(Boolean);
+
+          if (parts.length === 2 && parts[0] === 'categories') {
+            const catSlug = parts[1];
+            const matchedCategory = PPH_CATEGORIES.find(c => c.slug === catSlug) ||
+              PPH_CATEGORIES.flatMap(c => c.subcategories).find(s => s.slug === catSlug);
+            const categoryName = matchedCategory ? matchedCategory.name : 'All';
+            const categoryFilteredGigs = gigs.filter(g => {
+              if (categoryName !== 'All' && g.category !== categoryName) return false;
+              if (searchQuery.trim() && !g.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+              return true;
+            });
+
+            return (
+              <div>
+                {!matchedCategory && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold">
+                    Category "{catSlug}" not found. Showing all marketplace offers.
+                  </div>
+                )}
+                <MarketplaceGigsView 
+                  filteredGigs={categoryFilteredGigs}
+                  projects={projects}
+                  currentCategory={categoryName}
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
+                  activeDropdown={activeDropdown}
+                  setActiveDropdown={setActiveDropdown}
+                  serviceOptionFilter={serviceOptionFilter}
+                  setServiceOptionFilter={setServiceOptionFilter}
+                  sellerLevelFilter={sellerLevelFilter}
+                  setSellerLevelFilter={setSellerLevelFilter}
+                  budgetFilter={budgetFilter}
+                  setBudgetFilter={setBudgetFilter}
+                  deliveryTimeFilter={deliveryTimeFilter}
+                  setDeliveryTimeFilter={setDeliveryTimeFilter}
+                  onlineNowOnly={onlineNowOnly}
+                  setOnlineNowOnly={setOnlineNowOnly}
+                  gigViewMode={gigViewMode}
+                  setGigViewMode={setGigViewMode}
+                  likedGigIds={likedGigIds}
+                  handleToggleLike={handleToggleLike}
+                  navigate={navigate}
+                  getGigUrl={getGigUrl}
+                  currentUser={effectiveUser}
+                  setIsSignupModalOpen={setIsSignupOpen}
+                  slugify={slugify}
+                  CATEGORY_SLUGS={Object.fromEntries(PPH_CATEGORIES.map(c => [c.name, c.slug]))}
+                />
+              </div>
+            );
+          }
+
+          if (parts.length === 2) {
+            const [username, gigSlug] = parts;
+            const targetGig = gigs.find(g => {
+              const gigUser = (g.freelancerUsername || slugify(g.freelancerName || '')).toLowerCase();
+              const gSlug = (g.slug || slugify(g.title)).toLowerCase();
+              return (gigUser === username.toLowerCase() || g.freelancerId === username) && (gSlug === gigSlug.toLowerCase() || g.id === gigSlug);
+            });
+            if (targetGig) {
+              return (
+                <GigDetailView 
+                  currentGig={targetGig} 
+                  gigs={gigs} 
+                  reviews={appData.reviews} 
+                  orders={orders} 
+                  currentUser={effectiveUser} 
+                  navigate={navigate} 
+                  handleContactSeller={() => navigate('/messages')} 
+                  handleCreateOrder={() => navigate('/messages')} 
+                  slugify={slugify} 
+                />
+              );
+            }
+          }
+
+          if (parts.length === 1) {
+            const username = parts[0];
+            const targetUser = users.find(u => u.username?.toLowerCase() === username.toLowerCase() || slugify(u.name).toLowerCase() === username.toLowerCase() || u.id === username);
+            if (targetUser) {
+              return <FreelancerProfileView profileUser={targetUser} currentUser={effectiveUser} gigs={gigs} reviews={appData.reviews} onNavigate={navigate} />;
+            }
+          }
+
+          return (
+            <MarketplaceGigsView 
+              filteredGigs={filteredGigs}
+              projects={projects}
+              currentCategory={currentCategory}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              activeDropdown={activeDropdown}
+              setActiveDropdown={setActiveDropdown}
+              serviceOptionFilter={serviceOptionFilter}
+              setServiceOptionFilter={setServiceOptionFilter}
+              sellerLevelFilter={sellerLevelFilter}
+              setSellerLevelFilter={setSellerLevelFilter}
+              budgetFilter={budgetFilter}
+              setBudgetFilter={setBudgetFilter}
+              deliveryTimeFilter={deliveryTimeFilter}
+              setDeliveryTimeFilter={setDeliveryTimeFilter}
+              onlineNowOnly={onlineNowOnly}
+              setOnlineNowOnly={setOnlineNowOnly}
+              gigViewMode={gigViewMode}
+              setGigViewMode={setGigViewMode}
+              likedGigIds={likedGigIds}
+              handleToggleLike={handleToggleLike}
+              navigate={navigate}
+              getGigUrl={getGigUrl}
+              currentUser={effectiveUser}
+              setIsSignupModalOpen={setIsSignupOpen}
+              slugify={slugify}
+              CATEGORY_SLUGS={Object.fromEntries(PPH_CATEGORIES.map(c => [c.name, c.slug]))}
+            />
+          );
+        })()}
       </main>
 
       {/* Footer */}

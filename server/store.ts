@@ -450,10 +450,12 @@ export async function hydrateStoreFromPostgres() {
     await postgresStore.runMigrations();
     postgresStore.isHydrated = true;
 
+    const isProduction = process.env.NODE_ENV === 'production' && process.env.SEED_DEMO_DATA !== 'true';
     const pool = postgresStore.getPool();
     const userCountRes = await pool.query('SELECT COUNT(*) as c FROM users');
     const userCount = Number(userCountRes.rows[0]?.c || 0);
-    if (userCount === 0 && !(await postgresStore.isInitialized())) {
+
+    if (!isProduction && userCount === 0 && !(await postgresStore.isInitialized())) {
       const defaultPass = await bcrypt.hash('Password123!', 10);
       const nowIso = new Date().toISOString();
       const seedUsers: User[] = [
@@ -658,7 +660,8 @@ export async function hydrateStoreFromPostgres() {
     const orderCountRes = await pool.query('SELECT COUNT(*) as c FROM orders');
     const orderCount = Number(orderCountRes.rows[0]?.c || 0);
     const seedCheckUsers = await pool.query("SELECT id FROM users WHERE id IN ('u1', 'u2')");
-    if (orderCount === 0 && seedCheckUsers.rows.length === 2) {
+
+    if (!isProduction && orderCount === 0 && seedCheckUsers.rows.length === 2) {
       const todayDate = new Date().toISOString().split('T')[0];
       const dueDate = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
       const protectionEnd = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
@@ -763,6 +766,10 @@ export async function hydrateStoreFromPostgres() {
 
     console.log('[PostgresStore] Zero split-brain Cloud Run architecture initialized. PostgreSQL is the 100% source of truth.');
   } catch (err: any) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('FATAL: PostgreSQL failed to initialize in production mode:', err);
+      throw err;
+    }
     if (err?.code === 'ECONNREFUSED' || err?.message?.includes('ECONNREFUSED')) {
       console.warn('WARNING: PostgreSQL connection refused (ECONNREFUSED). Falling back to non-postgres mode for local development/preview.');
       postgresStore.isHydrated = true;

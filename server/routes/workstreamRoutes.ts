@@ -245,6 +245,30 @@ router.post(
         return res.status(413).json({ error: 'File is too large (25 MB maximum).' });
       }
 
+      const orderId = typeof req.query.orderId === 'string' ? req.query.orderId : undefined;
+      const workspaceId = typeof req.query.workspaceId === 'string' ? req.query.workspaceId : undefined;
+
+      if (orderId) {
+        const targetOrder = await store.getOrder(orderId);
+        if (!targetOrder) {
+          return res.status(404).json({ error: 'Associated order not found' });
+        }
+        if (!isStaffUser(caller) && targetOrder.buyerId !== caller.id && targetOrder.sellerId !== caller.id) {
+          return res.status(403).json({ error: 'Forbidden: You are not a participant of the specified order' });
+        }
+      }
+
+      if (workspaceId) {
+        const wsRes = await postgresStore.getPool().query('SELECT buyer_id, seller_id FROM workspaces WHERE workspace_id = $1', [workspaceId]);
+        if (wsRes.rows.length === 0) {
+          return res.status(404).json({ error: 'Associated workspace not found' });
+        }
+        const wsRow = wsRes.rows[0];
+        if (!isStaffUser(caller) && wsRow.buyer_id !== caller.id && wsRow.seller_id !== caller.id) {
+          return res.status(403).json({ error: 'Forbidden: You are not a participant of the specified workspace' });
+        }
+      }
+
       const mimeType = (req.headers['content-type'] as string) || 'application/octet-stream';
       await uploadFileToCloudStorage(storedFilename, buffer, mimeType);
       const fileUrl = `${WORKSTREAM_FILE_URL_PREFIX}${storedFilename}`;
@@ -254,7 +278,9 @@ router.post(
         originalName: safeBase,
         mime: mimeType,
         size: buffer.length,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        orderId: orderId || undefined,
+        workspaceId: workspaceId || undefined
       });
 
       const bytes = buffer.length;
@@ -283,7 +309,7 @@ router.get('/workstream/files/:filename', requireAuth, async (req: Request, res:
   if (!localExists && !dbRec) {
     return res.status(404).json({ error: 'File not found' });
   }
-  if (!canAccessWorkstreamFile((req as any).authenticatedUser, filename)) {
+  if (!(await canAccessWorkstreamFile((req as any).authenticatedUser, filename))) {
     return res.status(403).json({ error: 'Forbidden: You do not have access to this file.' });
   }
 
@@ -303,7 +329,7 @@ router.get('/workstream/files/:filename', requireAuth, async (req: Request, res:
   const forceDownload = req.query.download === '1' || !WORKSTREAM_INLINE_EXTENSIONS.has(ext) || ext === '.html' || ext === '.htm';
   if (!localExists) {
     if (forceDownload) res.attachment(originalName); else res.type(ext);
-    const stream = openCloudFileStream(filename, (req as any).authenticatedUser, canAccessWorkstreamFile);
+    const stream = openCloudFileStream(filename);
     stream.on('error', () => { if (!res.headersSent) res.status(404).json({ error: 'File not found' }); else res.end(); });
     return void stream.pipe(res);
   }
@@ -383,7 +409,6 @@ router.post('/messages', requireAuth, rateLimit(120, 60_000), async (req: Reques
 
     const newMsg = sanitizeAndCreateMessage(caller, order, req.body, fileCheck);
     recordMessage(newMsg);
-    await store.addMessage(newMsg);
     broadcastMessage(newMsg, order.id);
 
     const otherUserId = order.buyerId === caller.id ? order.sellerId : order.buyerId;
@@ -449,7 +474,6 @@ router.post('/orders/:id/message', requireAuth, rateLimit(120, 60_000), async (r
 
     const newMsg = sanitizeAndCreateMessage(user, order, req.body, fileCheck);
     recordMessage(newMsg);
-    await store.addMessage(newMsg);
     broadcastMessage(newMsg, order.id);
 
     res.json({ success: true, message: newMsg });

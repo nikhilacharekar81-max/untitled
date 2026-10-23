@@ -220,7 +220,7 @@ export async function processProposalAccept(req: any, res: any) {
     );
     let createdNewWorkspace = false;
     if (!workspace) {
-      workspace = workspaceService.createWorkspace({
+      workspace = await workspaceService.createWorkspaceAsync({
         buyerId: proj.buyer_id,
         sellerId: proposal.freelancerId,
         originType: 'project',
@@ -254,6 +254,8 @@ export async function processProposalAccept(req: any, res: any) {
       proposalId: proposal.id,
       feeBreakdown: financeLedger.quoteOrder(proposal.bidAmount)
     };
+
+    await workspaceService.ensureWorkspaceForOrderAsync(order);
 
     const offerId = 'off_' + randomUUID().slice(0, 12);
     const offerNum = `PRP-${Date.now().toString().slice(-4)}`;

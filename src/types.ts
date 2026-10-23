@@ -553,6 +553,8 @@ export interface WorkstreamUploadRecord {
   size?: number;
   createdAt: string;
   sha256?: string;
+  orderId?: string;
+  workspaceId?: string;
 }
 
 export interface AppNotification {

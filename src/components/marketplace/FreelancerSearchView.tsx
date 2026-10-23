@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { UserAccount, Gig } from '../../types';
 import { PPH_CATEGORIES } from '../HeaderCategoriesNav';
+import { getGigUrl } from '../../utils/slugify';
 
 interface FreelancerSearchViewProps {
   usersList: UserAccount[];
@@ -476,7 +477,7 @@ export const FreelancerSearchView: React.FC<FreelancerSearchViewProps> = ({
               {topTrendingOffers.map(gig => (
                 <div 
                   key={gig.id}
-                  onClick={() => navigate(`/gig/${gig.slug || gig.id}`)}
+                  onClick={() => navigate(getGigUrl(gig))}
                   className="min-w-[260px] max-w-[280px] bg-slate-50 rounded-xl border border-slate-200 p-3 hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between shrink-0"
                 >
                   <div className="space-y-2">
@@ -976,7 +977,7 @@ export const FreelancerSearchView: React.FC<FreelancerSearchViewProps> = ({
                               Popular Offer
                             </span>
                             <div 
-                              onClick={() => navigate(`/gig/${userGigs[0].slug || userGigs[0].id}`)}
+                              onClick={() => navigate(getGigUrl(userGigs[0]))}
                               className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer border border-slate-100"
                             >
                               <img src={userGigs[0].image} alt="" className="w-8 h-8 rounded object-cover shrink-0" />

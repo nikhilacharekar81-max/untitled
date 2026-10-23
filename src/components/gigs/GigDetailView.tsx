@@ -71,8 +71,8 @@ export const GigDetailView: React.FC<GigDetailViewProps> = ({
         <a href="/gigs" onClick={(e) => navigate('/gigs', e)} className="hover:text-fiverr-dark">Home</a>
         <span>/</span>
         <a 
-          href={`/categories/${CATEGORY_SLUGS[currentGig.category] || 'development-it'}`} 
-          onClick={(e) => navigate(`/categories/${CATEGORY_SLUGS[currentGig.category] || 'development-it'}`, e)} 
+          href={`/categories/${CATEGORY_SLUGS[currentGig.category] || 'technology-programming'}`} 
+          onClick={(e) => navigate(`/categories/${CATEGORY_SLUGS[currentGig.category] || 'technology-programming'}`, e)} 
           className="hover:text-fiverr-dark"
         >
           {currentGig.category}
